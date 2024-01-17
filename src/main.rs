@@ -1,7 +1,7 @@
 // Uncomment this block to pass the first stage
 use std::{
     io::{Read, Write},
-    net::TcpListener,
+    net::{TcpListener, TcpStream},
     thread,
 };
 
@@ -10,17 +10,26 @@ fn main() -> anyhow::Result<()> {
     println!("Logs from your program will appear here!");
 
     let listener = TcpListener::bind("127.0.0.1:6379").unwrap();
-    loop {
-        match listener.accept() {
-            Ok((mut stream, addr)) => {
-                println!("new client with address: {addr} connected");
+
+    for stream in listener.incoming() {
+        match stream {
+            Ok(stream) => {
                 thread::spawn(move || {
-                    let mut buf = [0; 1024];
-                    stream.read(&mut buf).unwrap();
-                    stream.write_all("+PONG\r\n".as_bytes()).unwrap();
+                    handle_connection(stream);
                 });
             }
-            Err(e) => println!("Couldn't get client: {:?}", e),
+            Err(e) => {
+                println!("error: {}", e);
+            }
         }
+    }
+    Ok(())
+}
+
+fn handle_connection(mut stream: TcpStream) {
+    let mut buf = [0; 1024];
+    loop {
+        stream.read(&mut buf).unwrap();
+        stream.write_all("+PONG\r\n".as_bytes()).unwrap();
     }
 }
