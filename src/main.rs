@@ -2,6 +2,7 @@
 use std::{
     io::{Read, Write},
     net::TcpListener,
+    thread,
 };
 
 fn main() -> anyhow::Result<()> {
@@ -12,19 +13,11 @@ fn main() -> anyhow::Result<()> {
 
     for stream in listener.incoming() {
         match stream {
-            Ok(mut stream) => {
+            Ok(mut stream) => loop {
                 let mut buf = [0; 1024];
                 stream.read(&mut buf)?;
-                let buf_string = String::from_utf8_lossy(&buf);
-                let mut splited = buf_string.split("\r\n");
-
-                if splited.next().unwrap() == "*1"
-                    && splited.next().unwrap() == "$4"
-                    && splited.next().unwrap().to_lowercase() == "ping"
-                {
-                    stream.write_all("+PONG\r\n".as_bytes())?;
-                }
-            }
+                stream.write_all("+PONG\r\n".as_bytes())?;
+            },
             Err(e) => {
                 println!("error: {}", e);
             }
