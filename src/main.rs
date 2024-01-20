@@ -43,7 +43,7 @@ fn handle_connection(mut stream: TcpStream) -> anyhow::Result<()> {
             }
         }
         if !v.is_empty() {
-            if v[0] == "ECHO" {
+            if v[0].to_lowercase() == "echo" {
                 stream.write_all(format!("+{}\r\n", v[1]).as_bytes())?;
                 continue;
             }
