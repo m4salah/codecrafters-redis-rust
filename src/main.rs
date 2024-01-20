@@ -33,8 +33,9 @@ impl Database {
                 if time.expires_at > now {
                     return Some(&value.value);
                 }
+            } else {
+                return Some(&value.value);
             }
-            return Some(&value.value);
         }
         None
     }
