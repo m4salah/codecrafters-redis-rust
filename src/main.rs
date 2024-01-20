@@ -34,6 +34,7 @@ impl Database {
                     return Some(&value.value);
                 }
             }
+            return Some(&value.value);
         }
         None
     }
@@ -108,13 +109,17 @@ fn handle_connection(mut stream: TcpStream, state: Arc<Mutex<Database>>) -> anyh
                         commands.iter().position(|v| v.to_lowercase() == "px")
                     {
                         let ms: u64 = commands[px_position + 1].parse().unwrap();
-                        state
-                            .lock()
-                            .unwrap()
-                            .set(&commands[1], &commands[2], Some(ms));
+                        {
+                            state
+                                .lock()
+                                .unwrap()
+                                .set(&commands[1], &commands[2], Some(ms));
+                        }
                         stream.write_all(format!("+OK\r\n").as_bytes())?;
                     } else {
-                        state.lock().unwrap().set(&commands[1], &commands[2], None);
+                        {
+                            state.lock().unwrap().set(&commands[1], &commands[2], None);
+                        }
                         stream.write_all(format!("+OK\r\n").as_bytes())?;
                     }
                     continue;
