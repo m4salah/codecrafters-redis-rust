@@ -3,6 +3,7 @@ use std::{
     collections::HashMap,
     io::{Read, Write},
     net::{TcpListener, TcpStream},
+    sync::{Arc, Mutex},
     thread,
 };
 
@@ -30,12 +31,13 @@ fn main() -> anyhow::Result<()> {
 
     let listener = TcpListener::bind("127.0.0.1:6379").unwrap();
 
+    let state = Arc::new(Mutex::new(Database::new()));
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
-                let db = Database::new();
+                let state = state.clone();
                 thread::spawn(move || {
-                    if let Err(e) = handle_connection(stream, db) {
+                    if let Err(e) = handle_connection(stream, state) {
                         eprintln!("ERROR: while handling the connection: {e}");
                     }
                 });
@@ -48,7 +50,7 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn handle_connection(mut stream: TcpStream, mut db: Database) -> anyhow::Result<()> {
+fn handle_connection(mut stream: TcpStream, state: Arc<Mutex<Database>>) -> anyhow::Result<()> {
     let mut buf = [0; 1024];
     loop {
         let n = stream.read(&mut buf)?;
@@ -69,12 +71,14 @@ fn handle_connection(mut stream: TcpStream, mut db: Database) -> anyhow::Result<
                 continue;
             }
             if commands[0].to_lowercase() == "set" {
-                db.set(&commands[1], &commands[2]);
+                {
+                    state.lock().unwrap().set(&commands[1], &commands[2]);
+                }
                 stream.write_all(format!("+OK\r\n").as_bytes())?;
                 continue;
             }
             if commands[0].to_lowercase() == "get" {
-                if let Some(v) = db.get(&commands[1]) {
+                if let Some(v) = state.lock().unwrap().get(&commands[1]) {
                     stream.write_all(format!("+{v}\r\n").as_bytes())?;
                 } else {
                     stream.write_all(format!("$-1\r\n").as_bytes())?;
