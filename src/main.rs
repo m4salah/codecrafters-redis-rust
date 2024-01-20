@@ -15,7 +15,9 @@ fn main() -> anyhow::Result<()> {
         match stream {
             Ok(stream) => {
                 thread::spawn(move || {
-                    handle_connection(stream);
+                    if let Err(e) = handle_connection(stream) {
+                        eprintln!("ERROR: while handling the connection: {e}");
+                    }
                 });
             }
             Err(e) => {
@@ -26,10 +28,27 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn handle_connection(mut stream: TcpStream) {
+fn handle_connection(mut stream: TcpStream) -> anyhow::Result<()> {
     let mut buf = [0; 1024];
     loop {
-        stream.read(&mut buf).unwrap();
-        stream.write_all("+PONG\r\n".as_bytes()).unwrap();
+        let n = stream.read(&mut buf)?;
+        let buf_str = String::from_utf8_lossy(&buf[..n]);
+        eprintln!("{}", buf_str);
+        let splitted = buf_str.split("\r\n");
+        let mut v = Vec::new();
+        for command in splitted {
+            if !command.starts_with("*") && !command.starts_with("$") && command != "" {
+                eprintln!("{:?}", command);
+                v.push(command);
+            }
+        }
+        if !v.is_empty() {
+            if v[0] == "ECHO" {
+                stream.write_all(format!("+{}\r\n", v[1]).as_bytes())?;
+                continue;
+            }
+        }
+        eprintln!("{:?}", v);
+        stream.write_all("+PONG\r\n".as_bytes())?;
     }
 }
