@@ -3,13 +3,17 @@ use std::{
     collections::HashMap,
     io::{Read, Write},
     net::{TcpListener, TcpStream},
+    path::PathBuf,
     sync::{Arc, Mutex},
     thread,
     time::{Duration, SystemTime},
 };
 
+use clap::Parser;
+
 struct Database {
     db: HashMap<String, DatabaseValue>,
+    config: HashMap<String, String>,
 }
 
 struct DatabaseValue {
@@ -23,7 +27,10 @@ struct Time {
 
 impl Database {
     fn new() -> Database {
-        Database { db: HashMap::new() }
+        Database {
+            db: HashMap::new(),
+            config: HashMap::new(),
+        }
     }
 
     fn get(&self, key: &str) -> Option<&String> {
@@ -57,15 +64,47 @@ impl Database {
         };
         self.db.insert(key.to_owned(), value)
     }
+
+    fn get_config(&self, key: &str) -> Option<&String> {
+        self.config.get(key)
+    }
+
+    fn set_config(&mut self, key: &str, value: &str) -> Option<String> {
+        self.config.insert(key.to_owned(), value.to_string())
+    }
+}
+#[derive(Parser, Debug)]
+struct Args {
+    /// Sets a custom config file
+    #[arg(long)]
+    dir: Option<PathBuf>,
+
+    /// Turn debugging information on
+    #[arg(long)]
+    dbfilename: Option<PathBuf>,
 }
 
 fn main() -> anyhow::Result<()> {
+    let args = Args::parse();
     // You can use print statements as follows for debugging, they'll be visible when running tests.
     println!("Logs from your program will appear here!");
 
     let listener = TcpListener::bind("127.0.0.1:6379").unwrap();
 
     let state = Arc::new(Mutex::new(Database::new()));
+
+    if let Some(dir) = args.dir {
+        state
+            .lock()
+            .unwrap()
+            .set_config("dir", dir.to_str().unwrap());
+    }
+    if let Some(dbfilename) = args.dbfilename {
+        state
+            .lock()
+            .unwrap()
+            .set_config("dbfilename", dbfilename.to_str().unwrap());
+    }
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
@@ -103,13 +142,14 @@ fn handle_connection(mut stream: TcpStream, state: Arc<Mutex<Database>>) -> anyh
             match commands[0].to_lowercase().as_str() {
                 "echo" => {
                     stream.write_all(format!("+{}\r\n", commands[1]).as_bytes())?;
-                    continue;
                 }
                 "set" => {
                     if let Some(px_position) =
                         commands.iter().position(|v| v.to_lowercase() == "px")
                     {
                         let ms: u64 = commands[px_position + 1].parse().unwrap();
+
+                        // lock on the state and set the value
                         {
                             state
                                 .lock()
@@ -123,7 +163,6 @@ fn handle_connection(mut stream: TcpStream, state: Arc<Mutex<Database>>) -> anyh
                         }
                         stream.write_all(format!("+OK\r\n").as_bytes())?;
                     }
-                    continue;
                 }
                 "get" => {
                     if let Some(v) = state.lock().unwrap().get(&commands[1]) {
@@ -131,12 +170,31 @@ fn handle_connection(mut stream: TcpStream, state: Arc<Mutex<Database>>) -> anyh
                     } else {
                         stream.write_all(format!("$-1\r\n").as_bytes())?;
                     }
-                    continue;
                 }
-                _ => {}
+                "config" => {
+                    if commands[1].to_lowercase() == "get" {
+                        if let Some(v) = state.lock().unwrap().get_config(commands[2]) {
+                            stream.write_all(
+                                format!(
+                                    "*2\r\n${}\r\n{}\r\n${}\r\n{}\r\n",
+                                    commands[2].len(),
+                                    commands[2],
+                                    v.len(),
+                                    v
+                                )
+                                .as_bytes(),
+                            )?;
+                        } else {
+                            stream.write_all(format!("$-1\r\n").as_bytes())?;
+                        }
+                    }
+                }
+                _ => {
+                    stream.write_all("+PONG\r\n".as_bytes())?;
+                }
             }
+        } else {
+            stream.write_all("+PONG\r\n".as_bytes())?;
         }
-        eprintln!("{:?}", commands);
-        stream.write_all("+PONG\r\n".as_bytes())?;
     }
 }
